@@ -62,6 +62,7 @@ class AutocompleteCombobox(ttk.Combobox):
         self._position = 0
         self.bind('<KeyRelease>', self._on_keyrelease)
 
+
     def set_completion_list(self, completion_list):
         """Set the list of possible suggestions."""
         self._completion_list = completion_list
@@ -69,20 +70,29 @@ class AutocompleteCombobox(ttk.Combobox):
 
     def _on_keyrelease(self, event):
         """Handle key release events to filter suggestions."""
-        if event.keysym in ('BackSpace', 'Delete'):
-            self._position = self.index(tk.END)
-        elif event.keysym=='Return':
-            self.event_generate('<<Entered>>')
-        else:
-            self._position = self.index(tk.INSERT)
-
+        try:
+            if event.keysym in ('BackSpace', 'Delete'):
+                self._position = self.index(tk.END)
+            elif event.keysym=='Return':
+                self.event_generate('<<Entered>>')
+                #make sure existent book chosen, also creates shorthand method for use
+                if self.get() not in self._completion_list:
+                    try:
+                        self.set(self._hits[0])
+                    except:
+                        self.set(self._completion_list[0])
+            else:
+                self._position = self.index(tk.INSERT)
+        except: pass
         # Get the current text in the combobox
         text = self.get()
-        if text == '':
+        if text == '' or text in self._completion_list:#speeds up repeat search
             self['values'] = self._completion_list
         else:
             # Filter suggestions based on input
             self._hits = [item for item in self._completion_list if item.lower().startswith(text.lower())]
+            if not self._hits:
+                self._hits=[item for item in self._completion_list if text.lower() in item.lower()]
             self['values'] = self._hits
 
        
@@ -94,14 +104,20 @@ def findVerse(event):
         chapter=bible[b][c]
         if v in chapter.keys():
             result=chapter[v]
-        elif v.count('-')==1:
-            bounds=v.split('-')
-            if bounds[0] in chapter.keys() and bounds[1] in chapter.keys() and bounds[0]<bounds[1]:
-                verses=[str(n) for n in range(int(bounds[0]),int(bounds[1])+1)]
-                result={n:chapter[n] for n in verses}
-            else:result=chapter    
         else:
-            result=chapter
+            vss=v.split(',')
+            verses=[]
+            result={}
+            for vs in vss:
+                if vs in chapter.keys():
+                    verses.append(vs)
+                elif vs.count('-')==1:
+                    bounds=vs.split('-')                    
+                    if bounds[0] in chapter.keys() and bounds[1] in chapter.keys() and bounds[0]<bounds[1]:
+                        verses+=[str(n) for n in range(int(bounds[0]),int(bounds[1])+1)]
+                for n in verses:
+                    result[n]=chapter[n]
+        if not result: result=chapter
         display(result,b,c,v)
 
 def display(inputt,b,c,v):
@@ -112,8 +128,13 @@ def display(inputt,b,c,v):
         disp+="\n"
     else: disp=""
     if isinstance(inputt,dict):
+        first=True
+        nex=1
         for num,ve in inputt.items():
-            if vnum.get():
+            if nex!=int(num) and not first:
+                disp+='\n'
+            if vnum.get() or (nex!=int(num) and not first):
+                #add number if option selected or there is a jump between verses
                 disp+=num
                 disp+=" "
             disp+=ve
@@ -121,6 +142,8 @@ def display(inputt,b,c,v):
                 disp+="\n"
             else:
                 disp+=" "
+            nex=int(num)+1
+            first=False
     else: 
         disp+=inputt
     if reference.get()=="End":
