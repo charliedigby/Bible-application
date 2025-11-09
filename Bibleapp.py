@@ -20,7 +20,7 @@ def resource_path(relative_path):
     except AttributeError:
         base_path = os.path.abspath(".")
     return os.path.join(base_path, relative_path)
-
+icon_path = resource_path("Bibleicon.ico")  # make sure you have a logo.ico file
 json_path=resource_path("ESVUK_bible.json")
 with open(json_path,'r',encoding='utf-8') as b:
     bi=b.read()
@@ -51,7 +51,86 @@ class Menubar(tk.Menu):
             self.textsize.add_radiobutton(label=str(i),value=str(i),variable=size,command=updatesize)
         self.options.add_cascade(menu=self.textsize,label="Text size")
         
+        self.add_command(label="Help", command=on_help)
+        
+def on_help():
+    helped=tk.Toplevel()
+    helped.title('Help')
+    helped.iconbitmap(icon_path)
+    helpframe=ttk.Frame(helped)
+    helpframe.columnconfigure(0, weight=1)
+    helpframe.rowconfigure(0, weight=1)
+    hcanvas=tk.Canvas(helpframe, width=500)
+    hcanvas.grid(column=0,row=0, sticky="n,w,e,s")
+    hscrollbar = ttk.Scrollbar(helpframe, orient=tk.VERTICAL, command=hcanvas.yview)
+    hscrollbar.grid(column=1,row=0, sticky='n,s')
 
+    hcanvas.configure(yscrollcommand=hscrollbar.set)
+    hcanvas.bind('<Configure>', lambda e: hcanvas.configure(scrollregion=hcanvas.bbox("all")))
+    hlabel_frame = ttk.Frame(hcanvas)
+    hcanvas.create_window((0, 0), window=hlabel_frame, anchor="nw")
+    hcanvas.bind_all("<MouseWheel>", lambda e,c=hcanvas: on_mousewheel(e,c))
+    helpframe.grid(column=0,row=0)
+    helptext="""Welcome to my Bible application.
+    To get started, simply input a book, chapter and verse in the respective boxes, press
+    enter in the verse box, and the verse should appear below.
+    You can now click "Copy", after which you will be able to paste the verse into a document
+    of your choice.
+    
+    Input options:
+        Books:
+            You can either select the dropdown menu using the mouse, or start typing.
+            At any point if you select the dropdown menu or use the down arrow key, a list of 
+            suggestions will appear.
+            If what you've typed matches the start of one or more books, these will costitute
+            the list, otherwise it will show all books whose names contain what you've typed.
+            Pressing enter while an option is selected will choose that option and move you to
+            the Chapter box,
+            pressing enter while typing will suggest the first suggested option, even if you 
+            haven't got the options showing,
+            this can be a useful shorthand.
+            
+            Input is case insensitive.
+            
+        Chapters:
+            The chapter box will accept any input, but you will only get an output if the 
+            chapter is in the book, so only use numeric characters.
+            
+            Pressing enter moves you to the Verse box.
+            
+        Verses:
+            You can leave the verse box blank, in which case the whole chapter will be displayed.
+            Single numbers, if found in the chapter will display the verse only.
+            You can also input a range of verses, separated by a hyphen (-).
+            Multiple groups of verses (or single verses) can be input, separated by commas, for 
+            instance, '1,3-6' or'3,7,10'.
+            When there is a break between verses (i.e. between 1 and 3 in the first example), 
+            there will be a line break and a verse number in the output.
+            
+            Pressing enter updates the output.
+    
+    Options:
+        The options dropdown menu allows you to adjust the format of the output.
+        With the exception of Text size, these will not update an output already on the screen, 
+        but pressing enter again in the verse box will refresh it.
+        
+        Display verse numbers:
+            When on, this will place verse number before each verse unless only one verse is 
+            returned.
+            
+        New line between verses:
+            When on, this creates a line break between each verse.
+            
+        Reference:
+            Choose whether to include the reference for the quotation at the beginning or end 
+            of the output, or not at all.
+            
+        Text size:
+            Select the size of the output text
+    """
+    helplabel=ttk.Label(hlabel_frame, text=helptext)
+    helplabel.grid(column=0,row=0)
+    helped.bind('<Destroy>',update_scrollregion)
 
 
 class AutocompleteCombobox(ttk.Combobox):
@@ -176,7 +255,7 @@ reference=tk.StringVar(value="End")
 size=tk.StringVar(value="8")
 
 
-icon_path = resource_path("Bibleicon.ico")  # make sure you have a logo.ico file
+
 root.iconbitmap(icon_path)
 
 root['menu'] = Menubar(root)
@@ -202,6 +281,7 @@ def on_mousewheel(event,canvas):
     canvas.yview_scroll(int(-1 * (event.delta / 120)), "units")
 def update_scrollregion(event):
     canvas.configure(scrollregion=canvas.bbox("all"))
+    canvas.bind_all("<MouseWheel>", lambda e,c=canvas: on_mousewheel(e,c))
 
 
 result=ttk.Label(label_frame,wraplength=250,  # Set wrap length in pixels
