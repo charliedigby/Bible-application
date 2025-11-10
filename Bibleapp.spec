@@ -5,7 +5,7 @@ a = Analysis(
     ['Bibleapp.py'],
     pathex=[],
     binaries=[],
-    datas=[('ESVUK_bible.json', '.'), ('Bibleicon.ico', '.')],
+    datas=[('ESVUK_bible.json', '.'), ('NIVUK_bible.json', '.'), ('KJV_bible.json', '.'), ('NLT_bible.json', '.'), ('NKJV_bible.json', '.'), ('NRSV_bible.json', '.'), ('Bibleicon.ico', '.')],
     hiddenimports=[],
     hookspath=[],
     hooksconfig={},
