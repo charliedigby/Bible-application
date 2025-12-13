@@ -8,7 +8,7 @@ Created on Sat Nov  8 09:55:33 2025
 import tkinter as tk
 from tkinter import ttk
 import json
-
+import re
 import sys
 import os
 
@@ -29,6 +29,8 @@ class Menubar(tk.Menu):
     def __init__(self,parent,*args,**kwargs):
         super().__init__(*args,**kwargs)
         self.options=tk.Menu(self)
+        self.add_command(label='Home',command=parent.hom)
+        self.add_command(label='Concordance',command=parent.conc)
         self.add_cascade(menu=self.options,label="Options")
         self.options.add_checkbutton(label="Display verse numbers",variable=parent.vnum)
         self.options.add_checkbutton(label="New line between verses",variable=parent.newline)
@@ -92,7 +94,10 @@ class AutocompleteCombobox(ttk.Combobox):
                 self._hits=[item for item in self._completion_list if text.lower() in item.lower()]
             self['values'] = self._hits
 
-       
+class ConcordanceItem(tk.Frame):
+    def __init__(parent,book,chapter,verse):
+        super().__init__(parent)
+        
 
 
 
@@ -102,6 +107,18 @@ class AutocompleteCombobox(ttk.Combobox):
 
 """ """
 class BibleWindow(tk.Toplevel):
+    def hom(self):
+        self.fr.grid(column=0,row=0)
+        try:
+            self.con.grid_forget()
+        except:pass
+        self.update_scrollregion('a', self.canvas)
+    def conc(self):
+        self.con.grid(column=0,row=0)
+        try:
+            self.fr.grid_forget()
+        except:pass
+        self.update_scrollregion('a', self.concanvas)
     def updatesize(self):
         self.result.configure(font=("Arial",int(self.size.get())))
     def on_help(self):
@@ -115,12 +132,18 @@ class BibleWindow(tk.Toplevel):
         hcanvas.grid(column=0,row=0, sticky="n,w,e,s")
         hscrollbar = ttk.Scrollbar(helpframe, orient=tk.VERTICAL, command=hcanvas.yview)
         hscrollbar.grid(column=1,row=0, sticky='n,s')
-
+        
+        
+        
         hcanvas.configure(yscrollcommand=hscrollbar.set)
         hcanvas.bind('<Configure>', lambda e: hcanvas.configure(scrollregion=hcanvas.bbox("all")))
         hlabel_frame = ttk.Frame(hcanvas)
         hcanvas.create_window((0, 0), window=hlabel_frame, anchor="nw")
         hcanvas.bind_all("<MouseWheel>", lambda e,c=hcanvas: self.on_mousewheel(e,c))
+        helped.bind('<FocusIn>', lambda e,c=hcanvas: self._bound_to_mousewheel(e,c))
+        helped.bind('<FocusOut>', lambda e,c=hcanvas: self._unbound_to_mousewheel(e,c))
+
+        
         helpframe.grid(column=0,row=0)
         helptext="""Welcome to my Bible application.
         To get started, simply input a book, chapter and verse in the respective boxes, press
@@ -181,7 +204,44 @@ class BibleWindow(tk.Toplevel):
         """
         helplabel=ttk.Label(hlabel_frame, text=helptext)
         helplabel.grid(column=0,row=0)
-        helped.bind('<Destroy>',self.update_scrollregion)
+
+    def concord(self,event):
+        try:
+            for item in self.conitems+self.conbuttons:
+                item.grid_forget()
+        except: pass
+        self.conitems=[]
+        self.conbuttons=[]
+        searchwithin=self.section[self.search_range.get()]
+        search=self.search.get()
+        searchlist=re.split(r'[^a-zA-Z]', search)
+        i=0
+        for book in searchwithin:
+            for c,chapter in self.bible[book].items():
+                for v,verse in chapter.items():
+                    ver=re.split(r'[^a-zA-Z]', verse.lower())
+                    match=all(word.lower() in ver for word in searchlist)
+                    if match:
+                        self.conitems.append(ttk.Label(self.conlabel_frame,text=verse,wraplength=250,justify='left'))
+                        self.conitems[i].grid(row=2*i,column=0,sticky='w')
+                       
+                        self.conbuttons.append(ttk.Label(self.conlabel_frame,text=book+' '+c+':'+v))
+                        self.conbuttons[i].grid(column=0,row=2*i+1,sticky='w')
+                        self.conbuttons[i].bind('<Button-1>',lambda e,b=book,ch=c,ve=v,ver=verse:self.ref_click(b,ch,ve,ver))
+                        i+=1
+                        if i==30: 
+                            self.concanvas.yview_moveto(0)
+                            return
+        self.concanvas.yview_moveto(0)
+    def ref_click(self,b,c,v,verse):
+        self.display(verse, b, c, v)
+        self.book.set(b)
+        self.chap.delete(0,tk.END)
+        self.chap.insert(0,c)
+        self.verse.delete(0,tk.END)
+        self.verse.insert(0,v)
+        self.hom()
+        self.verse.focus_set()
     def findVerse(self,event):
         b=self.book.get()
         c=self.chap.get()
@@ -244,30 +304,44 @@ class BibleWindow(tk.Toplevel):
         root.clipboard_append(copied)
         # Ensure the clipboard content is saved after the script ends
         root.update()
-    def on_mousewheel(self,event,canvas):
-        canvas.yview_scroll(int(-1 * (event.delta / 120)), "units")
-    def update_scrollregion(self,event):
-        self.canvas.configure(scrollregion=self.canvas.bbox("all"))
+    def on_mousewheel(self,event,canv):
+        canv.yview_scroll(int(-1 * (event.delta / 120)), "units")
+
+    def update_scrollregion(self,event,canv):
+        canv.configure(scrollregion=canv.bbox("all"))
+        canv.bind_all("<MouseWheel>", lambda e,c=canv: self.on_mousewheel(e,c))
+        self._bound_to_mousewheel('a',canv)
+        self.bind('<FocusIn>', lambda e,c=canv: self._bound_to_mousewheel(e,c))
+        self.bind('<FocusOut>', lambda e,c=canv: self._unbound_to_mousewheel(e,c))
+
+
+
+    def _bound_to_mousewheel(self, event,canv):
+        canv.bind_all("<MouseWheel>", lambda e,c=canv: self.on_mousewheel(e,c))
         
-        self.bind('<Enter>', self._bound_to_mousewheel)
-        self.bind('<Leave>', self._unbound_to_mousewheel)
+    def _unbound_to_mousewheel(self, event,canv):
+        canv.unbind_all("<MouseWheel>")
 
-
-
-    def _bound_to_mousewheel(self, event):
-        self.canvas.bind_all("<MouseWheel>", lambda e,c=self.canvas: self.on_mousewheel(e,c))
-
-    def _unbound_to_mousewheel(self, event):
-        self.canvas.unbind_all("<MouseWheel>")
     def __init__(self,translation):#translation as a dictionary containing json path and name
         super().__init__()
+        #load bible
         self.json_path=resource_path(translation['path'])
         with open(self.json_path,'r',encoding='utf-8') as b:
             bi=b.read()
         self.bible=json.loads(bi)
 
         self.books=[book for book in self.bible.keys()]
-        
+        sect={'Bible':self.books,'Old Testament':self.books[:39],
+                   'New Testament':self.books[39:],'Pentateuch':self.books[:5],
+                   'History books':self.books[5:17],'Wisdom books':self.books[17:22],
+                   'Prophets':self.books[22:39],'Major Prophets':self.books[22:27],
+                   'Minor Prophets':self.books[27:39],'Gospels':self.books[39:43],
+                   'Epistles':self.books[44:-1],'Paul':self.books[44:-9],
+                   'Peter':self.books[-7:-5],'John\'s Epistles':self.books[-5:-2]}
+        secti={book:[book] for book in self.books}
+        self.section=sect|secti
+        self.sectionref=list(self.section.keys())
+        #set up window
         self.title(translation['name'])
         self.geometry("300x300")
         self.option_add('*tearOff', tk.FALSE)
@@ -279,6 +353,7 @@ class BibleWindow(tk.Toplevel):
         self.columnconfigure(0, weight=1)
         self.rowconfigure(0, weight=1)
         
+        #option variables
         self.vnum=tk.BooleanVar(value=False)
         self.newline=tk.BooleanVar(value=False)
         self.reference=tk.StringVar(value="End")
@@ -287,6 +362,8 @@ class BibleWindow(tk.Toplevel):
         self.iconbitmap(icon_path)
         
         self['menu'] = Menubar(self)
+        
+        #home frame
         self.fr=ttk.Frame(self)
         self.fr.grid(column=0,row=0, sticky='n,w,e,s')
         self.fr.rowconfigure(3, weight=1)
@@ -304,8 +381,8 @@ class BibleWindow(tk.Toplevel):
         self.canvas.bind('<Configure>', lambda e: self.canvas.configure(scrollregion=self.canvas.bbox("all")))
         self.label_frame = ttk.Frame(self.canvas)
         self.canvas.create_window((0, 0), window=self.label_frame, anchor="nw")
-        self.bind('<Enter>', self._bound_to_mousewheel)
-        self.bind('<Leave>', self._unbound_to_mousewheel)
+        self.bind('<FocusIn>', lambda e, c=self.canvas:self._bound_to_mousewheel(e,c))
+        self.bind('<FocusOut>', lambda e, c=self.canvas:self._unbound_to_mousewheel(e,c))
         
         
 
@@ -314,7 +391,7 @@ class BibleWindow(tk.Toplevel):
             justify="left",  # Align text to the left
             font=("Arial", 8))  # Optional: Set font)
         self.result.grid(column=0,row=0,sticky='n,w')
-        self.result.bind('<Configure>',self.update_scrollregion)
+        self.result.bind('<Configure>',lambda e, c=self.canvas:self.update_scrollregion(e,c))
 
 
 
@@ -322,11 +399,15 @@ class BibleWindow(tk.Toplevel):
         self.verse=ttk.Entry(self.fr)
         self.verse.grid(column=1,row=2,sticky='e,w')
         self.verse.bind("<Return>",self.findVerse)
+        self.verse.bind("<Down>",self.findVerse)
+        self.verse.bind("<Up>",lambda e:self.chap.focus_set())
 
         ttk.Label(self.fr,text="Chapter:").grid(column=0,row=1)
         self.chap=ttk.Entry(self.fr)
         self.chap.grid(column=1,row=1,sticky='e,w')
         self.chap.bind("<Return>",lambda e:self.verse.focus_set())
+        self.chap.bind("<Down>",lambda e:self.verse.focus_set())
+        self.chap.bind("<Up>",lambda e:self.book.focus_set())
 
         ttk.Label(self.fr,text="Book:").grid(column=0,row=0)
         self.book=AutocompleteCombobox(self.fr)
@@ -342,6 +423,47 @@ class BibleWindow(tk.Toplevel):
 
         self.copy=ttk.Button(self.buttons, text="Copy",command=self.coppy)
         self.copy.grid()
+        
+        #concordance frame
+        self.con=ttk.Frame(self)
+        self.con.rowconfigure(3,weight=1)
+        self.con.columnconfigure(1,weight=1)
+        
+        self.concanvas=tk.Canvas(self.con)
+        self.concanvas.grid(column=0,row=3, columnspan=2, sticky="n,w,e,s")
+        self.conscrollbar = ttk.Scrollbar(self.con, orient=tk.VERTICAL, command=self.canvas.yview)
+        self.conscrollbar.grid(column=2,row=3, sticky='n,s')
+
+        self.concanvas.configure(yscrollcommand=self.conscrollbar.set)
+        self.concanvas.bind('<Configure>', lambda e: self.concanvas.configure(scrollregion=self.concanvas.bbox("all")))
+        self.conlabel_frame = ttk.Frame(self.concanvas)
+        self.concanvas.create_window((0, 0), window=self.conlabel_frame, anchor="nw")
+        self.conlabel_frame.bind('<Configure>', lambda e: self.concanvas.configure(scrollregion=self.concanvas.bbox("all")))
+
+        
+        self.conlabel_frame.bind('<Configure>',lambda e, c=self.concanvas:self.update_scrollregion(e,c))
+
+        """
+        self.conresult=ttk.Label(self.conlabel_frame,wraplength=250,  # Set wrap length in pixels
+            justify="left",  # Align text to the left
+            font=("Arial", 8))  # Optional: Set font)
+        self.conresult.grid(column=0,row=0,sticky='n,w')
+        self.conresult.bind('<Configure>',self.update_scrollregion)
+        """
+        ttk.Label(self.con,text="Keywords").grid(row=1,column=0)
+        self.search=ttk.Entry(self.con)
+        self.search.grid(row=1,column=1,sticky='e,w')
+        self.search.bind("<Up>",lambda e: self.search_range.focus_set())
+        self.search.bind("<Return>",self.concord)
+        self.search.bind("<Down>",self.concord)
+        
+        ttk.Label(self.con,text="Search within:").grid(row=0, column=0)
+        self.search_range=AutocompleteCombobox(self.con)
+        self.search_range.set_completion_list(self.sectionref)
+        self.search_range.grid(column=1,row=0,sticky='e,w')
+        self.search_range.bind('<<Entered>>',lambda e: self.search.focus_set())
+        
+        
 
 root=tk.Tk()
 root.title("Bible app")
