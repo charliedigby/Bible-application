@@ -34,6 +34,9 @@ class Menubar(tk.Menu):
         self.add_cascade(menu=self.options,label="Options")
         self.options.add_checkbutton(label="Display verse numbers",variable=parent.vnum)
         self.options.add_checkbutton(label="New line between verses",variable=parent.newline)
+        self.options.add_checkbutton(label="Quotation marks",variable=parent.quote)
+        self.options.add_checkbutton(label="Bracket reference",variable=parent.brack)
+        self.options.add_checkbutton(label="Reference on new line",variable=parent.nlref)
         
         self.reference=tk.Menu(self.options)
         self.reference.add_radiobutton(label="Beginning",variable=parent.reference,value="Beginning")
@@ -60,6 +63,7 @@ class AutocompleteCombobox(ttk.Combobox):
         self._hits = []
         self._position = 0
         self.bind('<KeyRelease>', self._on_keyrelease)
+        self.bind('<FocusIn>', lambda e:self.selection_range(0, tk.END))#highlight contents
 
 
     def set_completion_list(self, completion_list):
@@ -94,15 +98,7 @@ class AutocompleteCombobox(ttk.Combobox):
                 self._hits=[item for item in self._completion_list if text.lower() in item.lower()]
             self['values'] = self._hits
 
-class ConcordanceItem(tk.Frame):
-    def __init__(parent,book,chapter,verse):
-        super().__init__(parent)
-        
-
-
-
-    
-            
+                    
 
 
 """ """
@@ -113,12 +109,22 @@ class BibleWindow(tk.Toplevel):
             self.con.grid_forget()
         except:pass
         self.update_scrollregion('a', self.canvas)
+        if not self.book.get():
+            self.book.focus_set()
+        elif not self.chap.get():
+            self.chap.focus_set()
+        else:
+            self.verse.focus_set()
     def conc(self):
         self.con.grid(column=0,row=0)
         try:
             self.fr.grid_forget()
         except:pass
         self.update_scrollregion('a', self.concanvas)
+        if not self.search_range.get():
+            self.search_range.focus_set()
+        else:
+            self.search.focus_set()
     def updatesize(self):
         self.result.configure(font=("Arial",int(self.size.get())))
     def on_help(self):
@@ -220,9 +226,9 @@ class BibleWindow(tk.Toplevel):
             for c,chapter in self.bible[book].items():
                 for v,verse in chapter.items():
                     ver=re.split(r'[^a-zA-Z]', verse.lower())
-                    match=all(word.lower() in ver for word in searchlist)
+                    match=all(any(v.startswith(word.lower()) for v in ver) for word in searchlist)
                     if match:
-                        self.conitems.append(ttk.Label(self.conlabel_frame,text=verse,wraplength=250,justify='left'))
+                        self.conitems.append(ttk.Label(self.conlabel_frame,text=verse,wraplength=self.concanvas.winfo_width(),justify='left'))
                         self.conitems[i].grid(row=2*i,column=0,sticky='w')
                        
                         self.conbuttons.append(ttk.Label(self.conlabel_frame,text=book+' '+c+':'+v))
@@ -267,11 +273,20 @@ class BibleWindow(tk.Toplevel):
             self.display(result,b,c,v)
     def display(self,inputt,b,c,v):
         if self.reference.get()=="Beginning":
-            disp="%s %s"%(b,c)
+            disp=""
+            if self.brack.get():
+                disp+="("
+            disp+="%s %s"%(b,c)
             if v:
                 disp+=":%s"%(v)
-            disp+="\n"
+            if self.brack.get():
+                disp+=")"
+            if self.nlref.get():
+                disp+="\n"
+            else: disp+=" "
         else: disp=""
+        if self.quote.get():
+            disp+="\""
         if isinstance(inputt,dict):
             first=True
             nex=1
@@ -291,12 +306,22 @@ class BibleWindow(tk.Toplevel):
                 first=False
         else: 
             disp+=inputt
+        disp=disp.rstrip()
+        if self.quote.get():
+            
+            disp+="\""
+
         if self.reference.get()=="End":
-            if isinstance(inputt,str) or not self.newline.get():
+            if self.nlref.get():
                 disp+="\n"
+            else: disp+=" "
+            if self.brack.get():
+                disp+="("
             disp+="%s %s"%(b,c)
             if v:
                 disp+=":%s"%(v)
+            if self.brack.get():
+                disp+=")"
         self.result.configure(text=disp)
     def coppy(self):
         root.clipboard_clear()
@@ -321,6 +346,9 @@ class BibleWindow(tk.Toplevel):
         
     def _unbound_to_mousewheel(self, event,canv):
         canv.unbind_all("<MouseWheel>")
+        
+    def update_wrap(self,event):
+        self.result.config(wraplength=event.width)
 
     def __init__(self,translation):#translation as a dictionary containing json path and name
         super().__init__()
@@ -356,6 +384,9 @@ class BibleWindow(tk.Toplevel):
         #option variables
         self.vnum=tk.BooleanVar(value=False)
         self.newline=tk.BooleanVar(value=False)
+        self.quote=tk.BooleanVar(value=False)
+        self.brack=tk.BooleanVar(value=False)
+        self.nlref=tk.BooleanVar(value=True)
         self.reference=tk.StringVar(value="End")
         self.size=tk.StringVar(value="8")
 
@@ -372,7 +403,7 @@ class BibleWindow(tk.Toplevel):
 
 
 
-        self.canvas=tk.Canvas(self.fr)
+        self.canvas=tk.Canvas(self.fr,width=1000,height=1000)
         self.canvas.grid(column=0,row=3, columnspan=2, sticky="n,w,e,s")
         self.scrollbar = ttk.Scrollbar(self.fr, orient=tk.VERTICAL, command=self.canvas.yview)
         self.scrollbar.grid(column=2,row=3, sticky='n,s')
@@ -384,10 +415,10 @@ class BibleWindow(tk.Toplevel):
         self.bind('<FocusIn>', lambda e, c=self.canvas:self._bound_to_mousewheel(e,c))
         self.bind('<FocusOut>', lambda e, c=self.canvas:self._unbound_to_mousewheel(e,c))
         
+        self.canvas.bind('<Configure>',self.update_wrap)
         
 
-
-        self.result=ttk.Label(self.label_frame,wraplength=250,  # Set wrap length in pixels
+        self.result=ttk.Label(self.label_frame,  
             justify="left",  # Align text to the left
             font=("Arial", 8))  # Optional: Set font)
         self.result.grid(column=0,row=0,sticky='n,w')
@@ -415,21 +446,34 @@ class BibleWindow(tk.Toplevel):
         self.book.grid(column=1,row=0,sticky='e,w')
         self.book.bind('<<Entered>>',lambda e: self.chap.focus_set())
         self.book.focus_set()
-
+        
+        
+        self.current_focus=None
+        def set_focus(e):
+            self.current_focus=self.focus_get()
+        for box in [self.book,self.chap,self.verse]:
+            box.bind('<FocusIn>',set_focus)
+        def return_focus():
+            self.current_focus.focus_set()
 
 
         self.buttons=ttk.Frame(self.fr)
-        self.buttons.grid(column=0,row=4)
+        self.buttons.grid(column=0,row=4,columnspan=3,sticky='news')
 
         self.copy=ttk.Button(self.buttons, text="Copy",command=self.coppy)
-        self.copy.grid()
+        self.copy.grid(column=0, row=0, sticky='w')
+        self.vnumbutton=ttk.Checkbutton(self.buttons, text="Verse numbers", variable=self.vnum, command=return_focus)
+        self.nlinebutton=ttk.Checkbutton(self.buttons, text="New line", variable=self.newline, command=return_focus)
+        self.vnumbutton.grid(column=1, row=0)
+        self.nlinebutton.grid(column=2, row=0)
+
         
         #concordance frame
         self.con=ttk.Frame(self)
         self.con.rowconfigure(3,weight=1)
         self.con.columnconfigure(1,weight=1)
         
-        self.concanvas=tk.Canvas(self.con)
+        self.concanvas=tk.Canvas(self.con,width=1000,height=1000)
         self.concanvas.grid(column=0,row=3, columnspan=2, sticky="n,w,e,s")
         self.conscrollbar = ttk.Scrollbar(self.con, orient=tk.VERTICAL, command=self.canvas.yview)
         self.conscrollbar.grid(column=2,row=3, sticky='n,s')
@@ -442,14 +486,14 @@ class BibleWindow(tk.Toplevel):
 
         
         self.conlabel_frame.bind('<Configure>',lambda e, c=self.concanvas:self.update_scrollregion(e,c))
-
-        """
-        self.conresult=ttk.Label(self.conlabel_frame,wraplength=250,  # Set wrap length in pixels
-            justify="left",  # Align text to the left
-            font=("Arial", 8))  # Optional: Set font)
-        self.conresult.grid(column=0,row=0,sticky='n,w')
-        self.conresult.bind('<Configure>',self.update_scrollregion)
-        """
+        self.conitems=[]
+        def wrap_all(event):
+            for item in self.conitems:
+                item.config(wraplength=event.width)
+        
+        self.concanvas.bind('<Configure>',wrap_all)
+        
+       
         ttk.Label(self.con,text="Keywords").grid(row=1,column=0)
         self.search=ttk.Entry(self.con)
         self.search.grid(row=1,column=1,sticky='e,w')
